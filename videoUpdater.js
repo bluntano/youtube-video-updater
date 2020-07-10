@@ -1,7 +1,13 @@
+/*
+MIT License
+-------------------------
+Copyright (c) 2020 Bluntano
+*/
 const { request } = require('https');
 const fs = require('fs');
 const client_secret = require('./client_secret.json').web;
 
+// for refreshing access token
 let refreshToken = (refresh_token, _callback) => {
     request({
         host: 'oauth2.googleapis.com',
@@ -22,8 +28,11 @@ let refreshToken = (refresh_token, _callback) => {
     }).end();
 };
 
+// for getting access token
 let getAccessToken = (_callback) => {
     let tokens = require('./tokens.json');
+
+    // NOTE: redirect URI value in path is 'http://localhost/oauth2callback'
     request({
         host: "oauth2.googleapis.com",
         path: `/token?code=${tokens.auth_code}&client_id=${client_secret.client_id}&client_secret=${client_secret.client_secret}&redirect_uri=http://localhost/oauth2callback&grant_type=authorization_code`,
@@ -39,6 +48,10 @@ let getAccessToken = (_callback) => {
         res.on('end', () => {
             data = JSON.parse(data);
             console.log(data);
+
+            // on first time launching the code
+            // stores refresh token into tokens.json file
+            // for next time
             if (data.refresh_token && !data.error) {
 
                 let refresh_token = data.refresh_token;
@@ -55,6 +68,9 @@ let getAccessToken = (_callback) => {
                         _callback(data);
                     });
                 });
+
+            // bad request when access token already exists
+            // then refreshes token, gets new access token
             } else if (data.error == "invalid_grant" && data.error_description == "Bad Request") {
                 tokens = require('./tokens.json');
                 refreshToken(tokens.authorized.refresh_token, (data) => {
@@ -65,11 +81,13 @@ let getAccessToken = (_callback) => {
     }).end();
 };
 
+// updates video metadata
 exports.updateVideoInfo = (videoID) => {
     getAccessToken((data) => {
         console.log(data);
         let accessToken = data.access_token
 
+        // requests video data first
         request({
             host: "www.googleapis.com",
             path: `/youtube/v3/videos?part=id,snippet,statistics&id=${videoID}`,
@@ -104,6 +122,7 @@ exports.updateVideoInfo = (videoID) => {
                     'Content-Length': bodyString.length
                 };
 
+                // puts new metadata to the video
                 request({
                     host: 'www.googleapis.com',
                     path: `/youtube/v3/videos?part=id%2Csnippet&access_token=${accessToken}`,
@@ -117,6 +136,9 @@ exports.updateVideoInfo = (videoID) => {
                     res.on('end', () => {
                         str = JSON.parse(str);
                         console.log(str);
+
+                        // error occurs when token lacks permission to
+                        // edit video metadata
                         if (str.error && str.error.code === 403) {
                             console.log('FORBIDDEN!!!');
                         } else {
@@ -130,6 +152,8 @@ exports.updateVideoInfo = (videoID) => {
     });
 };
 
+// for revoking token
+// just in case!
 let revokeToken = (token) => {
     request({
         host: "oauth2.googleapis.com",
